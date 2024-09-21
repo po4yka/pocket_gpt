@@ -1,3 +1,3 @@
 from .fetcher import ContentFetcher
 
-__all__ = ['ContentFetcher']
+__all__ = ["ContentFetcher"]
