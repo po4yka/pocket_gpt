@@ -7,17 +7,26 @@ import utils
 from content_fetcher.fetcher import ContentFetcher
 from models import Article
 from openai_processor.processor import OpenAIProcessor
+from pocket_api.auth import PocketAuth
 from pocket_api.pocket_client import PocketClient
 
 
 def main():
     utils.setup_logging()
+
     parser = argparse.ArgumentParser(description="Pocket GPT CLI Tool")
     parser.add_argument("--fetch-pocket", action="store_true", help="Fetch articles from Pocket")
     parser.add_argument("--fetch-content", action="store_true", help="Fetch content for articles")
     parser.add_argument("--process-articles", action="store_true", help="Process articles with OpenAI GPT")
     parser.add_argument("--update-tags", action="store_true", help="Update articles in Pocket with tags")
+    parser.add_argument("--authenticate", action="store_true", help="Authenticate with Pocket and get access token")
     args = parser.parse_args()
+
+    if args.authenticate:
+        auth = PocketAuth()
+        access_token = auth.authenticate()
+        print(f"Access token: {access_token}")
+        return
 
     session = database.get_session()
     pocket_client = PocketClient(session)
