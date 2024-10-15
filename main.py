@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--process-articles", action="store_true", help="Process articles with OpenAI GPT")
     parser.add_argument("--update-tags", action="store_true", help="Update articles in Pocket with tags")
     parser.add_argument("--authenticate", action="store_true", help="Authenticate with Pocket and get access token")
+    parser.add_argument("--list-incomplete", action="store_true", help="List articles without title and description")
     args = parser.parse_args()
 
     if args.authenticate:
@@ -44,6 +45,9 @@ def main():
 
     if args.update_tags:
         update_pocket_tags(session, pocket_client)
+
+    if args.list_incomplete:
+        list_incomplete_articles(session)
 
 
 def fetch_content_for_articles(session, content_fetcher):
@@ -98,6 +102,31 @@ def update_pocket_tags(session, pocket_client):
             logger.info(f"Tags updated for article {article.pocket_id}")
         else:
             logger.error(f"Failed to update tags for article {article.pocket_id}")
+
+
+def list_incomplete_articles(session):
+    logger.info("Listing articles without title and URL")
+    incomplete_articles = (
+        session.query(Article)
+        .filter((Article.title is None) | (Article.title == "") | (Article.url is None) | (Article.url == ""))
+        .all()
+    )
+
+    if not incomplete_articles:
+        logger.info("No incomplete articles found.")
+    else:
+        logger.info(f"Found {len(incomplete_articles)} incomplete articles:")
+        for article in incomplete_articles:
+            pocket_link = f"https://getpocket.com/read/{article.pocket_id}"
+            logger.info(f"Article ID: {article.pocket_id}")
+            logger.info(f"Pocket Link: {pocket_link}")
+
+            if not article.url:
+                article.url = pocket_link
+                session.commit()
+                logger.info(f"Updated URL: {article.url}")
+
+            logger.info("---")
 
 
 if __name__ == "__main__":

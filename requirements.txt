@@ -55,3 +55,4 @@ virtualenv==20.26.5
 websockets==13.0.1
 Werkzeug==3.0.3
 zipp==3.20.2
+beautifulsoup4==4.12.3
