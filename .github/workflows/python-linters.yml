@@ -21,31 +21,20 @@ jobs:
               run: |
                   python -m pip install --upgrade pip
                   pip install -r requirements.txt
+                  pip install pre-commit
+                  pip install types-requests types-Flask types-PyYAML
 
-            # Step 1: Run and auto-apply changes with pre-commit
             - name: Run pre-commit hooks
-              run: pre-commit run --all-files --hook-stage manual || true
+              run: pre-commit run --all-files
 
-            # Step 2: Run and auto-apply changes with black
-            - name: Run black to reformat code
-              run: black .
+            - name: Run flake8
+              run: flake8 --max-line-length=120 .
 
-            # Step 3: Run and auto-apply changes with isort
-            - name: Run isort to sort imports
-              run: isort .
+            - name: Run black
+              run: black --check --line-length=120 .
 
-            # Step 4: Detect if there are changes to commit
-            - name: Check for changes
-              run: |
-                  git config --global user.name "github-actions[bot]"
-                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
-                  git diff --quiet || git commit -am "Apply automatic linter fixes"
+            - name: Run isort
+              run: isort --check-only --profile=black --line-length=100 .
 
-            # Step 5: Push changes back to the repository if any were made
-            - name: Push changes
-              if: success()
-              env:
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: |
-                git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-                git push origin HEAD:refs/heads/main
+            - name: Run mypy
+              run: mypy --namespace-packages --explicit-package-bases .
