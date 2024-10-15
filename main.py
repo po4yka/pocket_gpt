@@ -34,7 +34,7 @@ def main():
     openai_processor = OpenAIProcessor()
 
     if args.fetch_pocket:
-        pocket_client.fetch_articles()
+        pocket_client.fetch_all_articles()
 
     if args.fetch_content:
         fetch_content_for_articles(session, content_fetcher)
@@ -68,17 +68,14 @@ def process_articles_with_gpt(session, openai_processor):
             continue
 
         try:
-            # Generate all summaries, including the unlimited one
             summaries = openai_processor.generate_summaries(article.content)
             summary_20 = summaries["20_words"]
             summary_50 = summaries["50_words"]
             summary_100 = summaries["100_words"]
             unlimited_summary = summaries["unlimited"]
 
-            # Generate tags for the article
             tags = openai_processor.generate_tags(article.content)
 
-            # Save summaries and tags to the database
             article.summary_20 = summary_20
             article.summary_50 = summary_50
             article.summary_100 = summary_100
