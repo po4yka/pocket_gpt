@@ -10,7 +10,10 @@ class ContentFetcher:
     def __init__(self, session: Session):
         self.session = session
         self.api_url = "https://api.firecrawl.dev/v1/scrape"
-        self.headers = {"Authorization": f"Bearer {FIRECRAWL_API_KEY}", "Content-Type": "application/json"}
+        self.headers = {
+            "Authorization": f"Bearer {FIRECRAWL_API_KEY}",
+            "Content-Type": "application/json",
+        }
 
     def fetch_and_save_content(self, article: Article):
         try:
