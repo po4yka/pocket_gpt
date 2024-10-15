@@ -1,3 +1,6 @@
+from functools import lru_cache
+from typing import Dict, List, Optional
+
 import openai
 from loguru import logger
 
@@ -7,81 +10,64 @@ from config import OPENAI_API_KEY
 class OpenAIProcessor:
     def __init__(self):
         openai.api_key = OPENAI_API_KEY
+        self.model = "gpt-4o"
 
-    def _generate_summary(self, content, word_limit=None):
+    def _call_openai_api(self, system_message: str, user_message: str) -> str:
+        """Call OpenAI API with error handling."""
+        try:
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message},
+                ],
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Error calling OpenAI API: {e}")
+            raise
+
+    @lru_cache(maxsize=128)
+    def _cached_api_call(self, system_message: str, user_message: str) -> str:
+        """Cached version of the API call."""
+        return self._call_openai_api(system_message, user_message)
+
+    def _generate_summary(self, content: str, word_limit: Optional[int] = None) -> str:
         """Generate a summary with a specified word limit or unlimited length."""
+        system_message = "You are a helpful assistant that summarizes articles " "concisely and accurately."
+
         if word_limit:
-            prompt = f"""
-You are a helpful assistant. Below is the content of an article.
-Your task is to summarize it in exactly {word_limit} words.
-Be concise, maintain clarity, and prioritize key points.
-
-Content:
-{content}
-
-Summary ({word_limit} words):
-"""
+            user_message = (
+                f"Summarize the following content in exactly {word_limit} words. "
+                f"Prioritize key points and maintain clarity:\n\n{content}\n\n"
+                f"Summary ({word_limit} words):"
+            )
         else:
-            prompt = f"""
-You are a helpful assistant. Below is the content of an article.
-Your task is to summarize it without any word limit.
-Provide a complete, coherent summary that captures all key points.
-
-Content:
-{content}
-
-Unlimited Summary:
-"""
-        logger.info(f"Generating {'unlimited' if not word_limit else f'{word_limit}-word'} summary...")
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4-0613",  # Latest GPT-4 model
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that summarizes articles."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=1000 if word_limit is None else 500,
+            user_message = (
+                "Provide a comprehensive summary of the following content "
+                f"without any word limit. Capture all key points:\n\n{content}\n\n"
+                "Unlimited Summary:"
             )
-            summary = response.choices[0].message.content.strip()
-            logger.info(f"{'Unlimited' if not word_limit else f'{word_limit}-word'} summary generated successfully.")
-            return summary
-        except Exception as e:
-            logger.error(f"Error generating summary: {e}")
-            raise
 
-    def generate_summaries(self, content):
+        logger.info(f"Generating {'unlimited' if not word_limit else f'{word_limit}-word'} " "summary...")
+        return self._cached_api_call(system_message, user_message)
+
+    def generate_summaries(self, content: str) -> Dict[str, str]:
         """Generate summaries in 20, 50, 100 words, and unlimited length."""
-        summaries = {}
-        word_limits = [20, 50, 100, None]  # None represents unlimited summary
-        for limit in word_limits:
-            summary_type = "unlimited" if limit is None else f"{limit}_words"
-            summaries[summary_type] = self._generate_summary(content, limit)
-        return summaries
+        word_limits = [20, 50, 100, None]
+        return {
+            f"{'unlimited' if limit is None else f'{limit}_words'}": self._generate_summary(content, limit)
+            for limit in word_limits
+        }
 
-    def generate_tags(self, content):
+    def generate_tags(self, content: str) -> List[str]:
         """Generate relevant tags for the content."""
-        prompt = f"""
-Below is the content of an article. Generate a list of tags based on the key topics and themes present.
+        system_message = "You are a helpful assistant that generates relevant and concise " "tags for articles."
+        user_message = (
+            "Generate a comma-separated list of relevant tags based on the key "
+            f"topics and themes in the following content:\n\n{content}\n\nTags:"
+        )
 
-Content:
-{content}
-
-Tags:
-"""
         logger.info("Generating tags...")
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4-0613",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that generates tags for articles."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=60,
-            )
-            tags_text = response.choices[0].message.content.strip()
-            tags = [tag.strip() for tag in tags_text.split(",") if tag.strip()]
-            logger.info("Tags generated successfully.")
-            return tags
-        except Exception as e:
-            logger.error(f"Error generating tags: {e}")
-            raise
+        tags_text = self._cached_api_call(system_message, user_message)
+        return [tag.strip() for tag in tags_text.split(",") if tag.strip()]
