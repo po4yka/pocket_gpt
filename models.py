@@ -1,12 +1,13 @@
-from __future__ import annotations
-
-import datetime
+from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
+    """Base class for all SQLAlchemy ORM models."""
+
     pass
 
 
@@ -15,15 +16,16 @@ class Article(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pocket_id: Mapped[str] = mapped_column(String, unique=True, index=True)
-    title: Mapped[str] = mapped_column(String)
-    url: Mapped[str] = mapped_column(String)
-    content: Mapped[str] = mapped_column(Text)
-    summary: Mapped[str] = mapped_column(Text)
-    tags: Mapped[str] = mapped_column(Text)
-    pocket_data: Mapped[str] = mapped_column(Text)
-    date_added: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc)
-    )
+    title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary_20: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary_50: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary_100: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    unlimited_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pocket_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    date_added: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self) -> str:
         return f"<Article(id={self.id}, pocket_id='{self.pocket_id}', title='{self.title}')>"

@@ -61,17 +61,34 @@ def fetch_content_for_articles(session, content_fetcher):
 
 def process_articles_with_gpt(session, openai_processor):
     logger.info("Processing articles with OpenAI GPT")
-    articles = session.query(Article).filter(Article.content.isnot(None), Article.summary.is_(None)).all()
+    articles = session.query(Article).filter(Article.content.isnot(None), Article.summary_20.is_(None)).all()
     for article in articles:
         if not article.content:
             logger.warning(f"No content for article {article.pocket_id}, skipping.")
             continue
-        summary = openai_processor.generate_summary(article.content)
-        tags = openai_processor.generate_tags(article.content)
-        article.summary = summary
-        article.tags = ",".join(tags)
-        session.commit()
-        logger.info(f"Article {article.pocket_id} processed")
+
+        try:
+            # Generate all summaries, including the unlimited one
+            summaries = openai_processor.generate_summaries(article.content)
+            summary_20 = summaries["20_words"]
+            summary_50 = summaries["50_words"]
+            summary_100 = summaries["100_words"]
+            unlimited_summary = summaries["unlimited"]
+
+            # Generate tags for the article
+            tags = openai_processor.generate_tags(article.content)
+
+            # Save summaries and tags to the database
+            article.summary_20 = summary_20
+            article.summary_50 = summary_50
+            article.summary_100 = summary_100
+            article.unlimited_summary = unlimited_summary
+            article.tags = ",".join(tags)
+            session.commit()
+
+            logger.info(f"Article {article.pocket_id} processed successfully.")
+        except Exception as e:
+            logger.error(f"Error processing article {article.pocket_id}: {e}")
 
 
 def update_pocket_tags(session, pocket_client):
