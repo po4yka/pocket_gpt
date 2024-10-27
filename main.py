@@ -61,15 +61,21 @@ def main():
 
 def fetch_content_for_articles(session, content_fetcher):
     logger.info("Fetching content for articles")
-    articles = session.query(Article).filter(Article.content.is_(None)).all()
+    articles = (
+        session.query(Article)
+        .filter(
+            (Article.content.is_(None) | (Article.content == ""))
+            & (Article.content_html.is_(None) | (Article.content_html == ""))
+            & (Article.firecrawl_metadata.is_(None))
+        )
+        .all()
+    )
     for article in articles:
-        content = content_fetcher.fetch_content(article.url)
-        if content:
-            article.content = content
-            session.commit()
+        success = content_fetcher.fetch_and_save_content(article)
+        if success:
             logger.info(f"Content fetched for article {article.pocket_id}")
         else:
-            logger.warning(f"No content fetched for article {article.pocket_id}")
+            logger.warning(f"Failed to fetch content for article {article.pocket_id}")
 
 
 def process_articles_with_gpt(session, openai_processor):

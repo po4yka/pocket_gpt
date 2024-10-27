@@ -29,7 +29,10 @@ class Article(Base):
     tags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pocket_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     date_added: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-
+    author: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    published_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    word_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    estimated_reading_time: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     firecrawl_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     def __repr__(self) -> str:

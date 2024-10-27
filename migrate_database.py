@@ -1,5 +1,5 @@
 from loguru import logger
-from sqlalchemy import JSON, create_engine, text
+from sqlalchemy import JSON, DateTime, Integer, String, create_engine, text
 from sqlalchemy.engine import Engine
 
 from config import DATABASE_URL
@@ -17,8 +17,8 @@ def backup_database(engine: Engine) -> bool:
             conn.execute(text("CREATE TABLE IF NOT EXISTS articles_backup AS SELECT * FROM articles"))
             conn.commit()
 
-            logger.info("Database backup created successfully")
-            return True
+        logger.info("Database backup created successfully")
+        return True
     except Exception as e:
         logger.error(f"Failed to create database backup: {e}")
         return False
@@ -29,6 +29,12 @@ def get_column_type(column_name: str) -> str:
     column = Article.__table__.columns[column_name]
     if isinstance(column.type, JSON):
         return "TEXT"  # SQLite doesn't have a native JSON type
+    elif isinstance(column.type, DateTime):
+        return "DATETIME"
+    elif isinstance(column.type, Integer):
+        return "INTEGER"
+    elif isinstance(column.type, String):
+        return "TEXT"
     return str(column.type.compile())
 
 
@@ -48,12 +54,19 @@ def migrate_database():
 
         # Add missing columns
         with engine.connect() as conn:
-            if "content_html" not in existing_columns:
-                conn.execute(text("ALTER TABLE articles ADD COLUMN content_html TEXT"))
-
-            if "firecrawl_metadata" not in existing_columns:
-                # SQLite stores JSON as TEXT
-                conn.execute(text("ALTER TABLE articles ADD COLUMN firecrawl_metadata TEXT"))
+            new_columns = [
+                "content_html",
+                "firecrawl_metadata",
+                "author",
+                "published_date",
+                "word_count",
+                "estimated_reading_time",
+            ]
+            for column in new_columns:
+                if column not in existing_columns:
+                    col_type = get_column_type(column)
+                    conn.execute(text(f"ALTER TABLE articles ADD COLUMN {column} {col_type}"))
+                    logger.info(f"Added column: {column} ({col_type})")
 
             conn.commit()
 
