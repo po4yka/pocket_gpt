@@ -1,7 +1,7 @@
 import argparse
 
 from loguru import logger
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 import database
 import utils
@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--authenticate", action="store_true", help="Authenticate with Pocket and get access token")
     parser.add_argument("--list-incomplete", action="store_true", help="List articles without title and description")
     parser.add_argument("--list-articles", action="store_true", help="List all fetched articles")
+    parser.add_argument("--db-info", action="store_true", help="Get database information")
     args = parser.parse_args()
 
     if args.authenticate:
@@ -53,6 +54,9 @@ def main():
 
     if args.list_articles:
         list_all_articles(session)
+
+    if args.db_info:
+        get_database_info(session)
 
 
 def fetch_content_for_articles(session, content_fetcher):
@@ -155,6 +159,20 @@ def list_all_articles(session):
             logger.info(f"URL: {article.url}")
             logger.info(f"Date Added: {article.date_added}")
             logger.info("---")
+
+
+def get_database_info(session):
+    logger.info("Fetching database information")
+
+    total_articles = session.query(func.count(Article.id)).scalar()
+    articles_with_content = session.query(func.count(Article.id)).filter(Article.content.isnot(None)).scalar()
+    articles_with_summary = session.query(func.count(Article.id)).filter(Article.summary_20.isnot(None)).scalar()
+    articles_with_tags = session.query(func.count(Article.id)).filter(Article.tags.isnot(None)).scalar()
+
+    logger.info(f"Total articles: {total_articles}")
+    logger.info(f"Articles with content: {articles_with_content}")
+    logger.info(f"Articles with summary: {articles_with_summary}")
+    logger.info(f"Articles with tags: {articles_with_tags}")
 
 
 if __name__ == "__main__":
