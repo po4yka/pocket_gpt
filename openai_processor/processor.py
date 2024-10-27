@@ -16,15 +16,20 @@ class OpenAIProcessor:
     def _call_openai_api(self, system_message: str, user_message: str) -> str:
         try:
             logger.info("Calling OpenAI API...")
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": user_message},
                 ],
             )
-            result = response.choices[0].message.content.strip()
-            logger.info("OpenAI API call successful.")
+            content = response.choices[0].message.content
+            if content is not None:
+                result = content.strip()
+                logger.info("OpenAI API call successful.")
+            else:
+                logger.error("OpenAI API call returned None content.")
+                result = ""
             return result
         except Exception as e:
             logger.error(f"Error calling OpenAI API: {e}")
