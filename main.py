@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--update-tags", action="store_true", help="Update articles in Pocket with tags")
     parser.add_argument("--authenticate", action="store_true", help="Authenticate with Pocket and get access token")
     parser.add_argument("--list-incomplete", action="store_true", help="List articles without title and description")
+    parser.add_argument("--list-articles", action="store_true", help="List all fetched articles")
     args = parser.parse_args()
 
     if args.authenticate:
@@ -49,6 +50,9 @@ def main():
 
     if args.list_incomplete:
         list_incomplete_articles(session)
+
+    if args.list_articles:
+        list_all_articles(session)
 
 
 def fetch_content_for_articles(session, content_fetcher):
@@ -134,6 +138,22 @@ def list_incomplete_articles(session):
                 session.commit()
                 logger.info(f"Updated URL: {article.url}")
 
+            logger.info("---")
+
+
+def list_all_articles(session):
+    logger.info("Listing all fetched articles")
+    articles = session.query(Article).order_by(Article.date_added.desc()).all()
+
+    if not articles:
+        logger.info("No articles found.")
+    else:
+        logger.info(f"Found {len(articles)} articles:")
+        for article in articles:
+            logger.info(f"Article ID: {article.pocket_id}")
+            logger.info(f"Title: {article.title}")
+            logger.info(f"URL: {article.url}")
+            logger.info(f"Date Added: {article.date_added}")
             logger.info("---")
 
 
