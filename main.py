@@ -1,4 +1,6 @@
 import argparse
+import sys
+import time
 
 from loguru import logger
 from sqlalchemy import func, or_
@@ -26,56 +28,110 @@ def main():
     parser.add_argument("--db-info", action="store_true", help="Get database information")
     args = parser.parse_args()
 
-    if args.authenticate:
-        auth = PocketAuth()
-        access_token = auth.authenticate()
-        print(f"Access token: {access_token}")
-        return
+    try:
+        if args.authenticate:
+            auth = PocketAuth()
+            access_token = auth.authenticate()
+            print(f"Access token: {access_token}")
+            return
 
-    session = database.get_session()
-    pocket_client = PocketClient(session)
-    content_fetcher = ContentFetcher(session)
-    openai_processor = OpenAIProcessor()
+        session = database.get_session()
 
-    if args.fetch_pocket:
-        pocket_client.fetch_all_articles()
+        try:
+            pocket_client = PocketClient(session)
+            content_fetcher = ContentFetcher(session)
+            openai_processor = OpenAIProcessor()
 
-    if args.fetch_content:
-        fetch_content_for_articles(session, content_fetcher)
+            if args.fetch_pocket:
+                pocket_client.fetch_all_articles()
 
-    if args.process_articles:
-        process_articles_with_gpt(session, openai_processor)
+            if args.fetch_content:
+                fetch_content_for_articles(session, content_fetcher)
 
-    if args.update_tags:
-        update_pocket_tags(session, pocket_client)
+            if args.process_articles:
+                process_articles_with_gpt(session, openai_processor)
 
-    if args.list_incomplete:
-        list_incomplete_articles(session)
+            if args.update_tags:
+                update_pocket_tags(session, pocket_client)
 
-    if args.list_articles:
-        list_all_articles(session)
+            if args.list_incomplete:
+                list_incomplete_articles(session)
 
-    if args.db_info:
-        get_database_info(session)
+            if args.list_articles:
+                list_all_articles(session)
+
+            if args.db_info:
+                get_database_info(session)
+
+        except Exception as e:
+            logger.error(f"Error during execution: {str(e)}")
+            logger.exception("Detailed error:")
+        finally:
+            session.close()
+
+    except Exception as e:
+        logger.error(f"Fatal error in main: {str(e)}")
+        logger.exception("Detailed error:")
+        sys.exit(1)
 
 
 def fetch_content_for_articles(session, content_fetcher):
-    logger.info("Fetching content for articles")
-    articles = (
-        session.query(Article)
-        .filter(
-            (Article.content.is_(None) | (Article.content == ""))
-            & (Article.content_html.is_(None) | (Article.content_html == ""))
-            & (Article.firecrawl_metadata.is_(None))
+    """
+    Fetch content for all articles, handling failures gracefully.
+
+    Args:
+        session: SQLAlchemy session
+        content_fetcher: ContentFetcher instance
+    """
+    logger.info("Starting content fetch for articles")
+    try:
+        articles = (
+            session.query(Article)
+            .filter(
+                (Article.content.is_(None) | (Article.content == ""))
+                & (Article.content_html.is_(None) | (Article.content_html == ""))
+                & (Article.firecrawl_metadata.is_(None))
+            )
+            .all()
         )
-        .all()
-    )
-    for article in articles:
-        success = content_fetcher.fetch_and_save_content(article)
-        if success:
-            logger.info(f"Content fetched for article {article.pocket_id}")
-        else:
-            logger.warning(f"Failed to fetch content for article {article.pocket_id}")
+
+        total_articles = len(articles)
+        logger.info(f"Found {total_articles} articles that need content")
+
+        for index, article in enumerate(articles, 1):
+            logger.info(f"Processing article {index}/{total_articles} (ID: {article.pocket_id})")
+
+            try:
+                success = content_fetcher.fetch_and_save_content(article)
+                if success:
+                    logger.info(f"Successfully fetched content for article {article.pocket_id}")
+                else:
+                    logger.warning(f"Failed to fetch content for article {article.pocket_id}")
+
+            except Exception as e:
+                logger.error(f"Error processing article {article.pocket_id}: {str(e)}")
+                logger.exception("Detailed error:")
+                continue  # Continue with next article despite the error
+
+            time.sleep(1)
+
+        # Log final statistics
+        stats = content_fetcher.get_processing_stats()
+        logger.info("\nProcessing Summary:")
+        logger.info("=" * 50)
+        logger.info(f"Total articles processed: {total_articles}")
+        logger.info(f"Successful: {stats['successful']}")
+        logger.info(f"Failed: {stats['failed']}")
+        logger.info(f"Blocked URLs: {stats['blocked_urls']}")
+        logger.info(f"Social media blocked: {stats['social_media_blocked']}")
+        logger.info(f"Rate limited: {stats['rate_limited']}")
+        logger.info(f"Other errors: {stats['other_errors']}")
+
+    except Exception as e:
+        logger.error(f"Fatal error in fetch_content_for_articles: {str(e)}")
+        logger.exception("Detailed error:")
+    finally:
+        logger.info("Content fetch process completed")
 
 
 def process_articles_with_gpt(session, openai_processor):
