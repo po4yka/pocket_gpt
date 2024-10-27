@@ -1,6 +1,7 @@
 import argparse
 
 from loguru import logger
+from sqlalchemy import or_
 
 import database
 import utils
@@ -31,7 +32,7 @@ def main():
 
     session = database.get_session()
     pocket_client = PocketClient(session)
-    content_fetcher = ContentFetcher()
+    content_fetcher = ContentFetcher(session)
     openai_processor = OpenAIProcessor()
 
     if args.fetch_pocket:
@@ -108,7 +109,14 @@ def list_incomplete_articles(session):
     logger.info("Listing articles without title and URL")
     incomplete_articles = (
         session.query(Article)
-        .filter((Article.title is None) | (Article.title == "") | (Article.url is None) | (Article.url == ""))
+        .filter(
+            or_(
+                Article.title.is_(None),
+                Article.title == "",
+                Article.url.is_(None),
+                Article.url == "",
+            )
+        )
         .all()
     )
 
