@@ -68,6 +68,10 @@ class ContentFetcher:
         self.failed_articles: Dict[str, List[FetchError]] = {}
         self.last_request_time = 0.0
 
+    def get_processing_stats(self) -> Dict[str, int]:
+        """Return current processing statistics."""
+        return self.stats.copy()
+
     def _log_failure(self, article: Article, error: FetchError) -> None:
         """Log a failure for an article."""
         if article.pocket_id not in self.failed_articles:
@@ -87,6 +91,9 @@ class ContentFetcher:
             error_message += f"\nDetails: {error.details}"
 
         logger.warning(error_message)
+
+        # Update statistics
+        self.stats["failed"] += 1
 
     def _sanitize_text(self, text: Optional[str]) -> Optional[str]:
         """Sanitize text content for database storage."""
@@ -119,6 +126,8 @@ class ContentFetcher:
 
     def fetch_and_save_content(self, article: Article) -> bool:
         """Fetch content for a single article and save it to the database."""
+        self.stats["total_processed"] += 1
+
         if not article.url:
             error = FetchError(type=FetchErrorType.NO_URL, message="No URL provided for article")
             self._log_failure(article, error)
@@ -157,6 +166,7 @@ class ContentFetcher:
             try:
                 self.session.commit()
                 logger.info(f"Content and metadata saved for article: {article.pocket_id}")
+                self.stats["successful"] += 1
                 return True
             except Exception as e:
                 self.session.rollback()
@@ -170,23 +180,19 @@ class ContentFetcher:
             error_str = str(e).lower()
             if "rate limit" in error_str:
                 error_type = FetchErrorType.RATE_LIMIT
+                self.stats["rate_limited"] += 1
             elif "url is blocked" in error_str:
                 error_type = FetchErrorType.BLOCKED_URL
+                self.stats["blocked_urls"] += 1
             elif any(domain in error_str for domain in self.SOCIAL_MEDIA_DOMAINS):
                 error_type = FetchErrorType.SOCIAL_MEDIA
+                self.stats["social_media_blocked"] += 1
             elif "network" in error_str or "connection" in error_str:
                 error_type = FetchErrorType.NETWORK_ERROR
-
-            error = FetchError(type=error_type, message=error_message)
-            self._log_failure(article, error)
-
-            if error_type == FetchErrorType.SOCIAL_MEDIA:
-                self.stats["social_media_blocked"] += 1
-            elif error_type == FetchErrorType.BLOCKED_URL:
-                self.stats["blocked_urls"] += 1
-            elif error_type == FetchErrorType.RATE_LIMIT:
-                self.stats["rate_limited"] += 1
+                self.stats["other_errors"] += 1
             else:
                 self.stats["other_errors"] += 1
 
+            error = FetchError(type=error_type, message=error_message)
+            self._log_failure(article, error)
             return False
