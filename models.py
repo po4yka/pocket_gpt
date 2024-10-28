@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -33,7 +33,7 @@ class Article(Base):
     published_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     word_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     estimated_reading_time: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    firecrawl_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    firecrawl_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     def __repr__(self) -> str:
         return f"<Article(id={self.id}, pocket_id='{self.pocket_id}', title='{self.title}')>"

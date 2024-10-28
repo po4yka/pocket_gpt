@@ -28,7 +28,9 @@ def get_column_type(column_name: str) -> str:
     """Get the SQLite column type for a given model column."""
     column = Article.__table__.columns[column_name]
     if isinstance(column.type, JSON):
-        return "TEXT"  # SQLite doesn't have a native JSON type
+        # SQLite doesn't have a native JSON type, but we'll use TEXT
+        # SQLAlchemy will handle JSON serialization/deserialization
+        return "TEXT"
     elif isinstance(column.type, DateTime):
         return "DATETIME"
     elif isinstance(column.type, Integer):
@@ -36,6 +38,47 @@ def get_column_type(column_name: str) -> str:
     elif isinstance(column.type, String):
         return "TEXT"
     return str(column.type.compile())
+
+
+def convert_existing_json_data(engine: Engine) -> None:
+    """Convert existing JSON data to ensure proper format."""
+    try:
+        with engine.connect() as conn:
+            # Check if firecrawl_metadata column exists
+            columns = conn.execute(text("PRAGMA table_info(articles)")).fetchall()
+            if any(col[1] == "firecrawl_metadata" for col in columns):
+                # Get all rows with non-null firecrawl_metadata
+                rows = conn.execute(
+                    text("SELECT id, firecrawl_metadata FROM articles WHERE firecrawl_metadata IS NOT NULL")
+                ).fetchall()
+
+                for row in rows:
+                    try:
+                        # If the data is already in proper JSON format, this will work
+                        import json
+
+                        metadata_str = row[1]
+                        if isinstance(metadata_str, str):
+                            # Try to parse and re-stringify to ensure proper format
+                            json_data = json.loads(metadata_str)
+                            formatted_json = json.dumps(json_data)
+
+                            # Update the row with properly formatted JSON
+                            conn.execute(
+                                text("UPDATE articles SET firecrawl_metadata = :metadata WHERE id = :id"),
+                                {"metadata": formatted_json, "id": row[0]},
+                            )
+                    except (json.JSONDecodeError, TypeError) as e:
+                        logger.warning(f"Failed to convert JSON data for article ID {row[0]}: {e}")
+                        # Set to NULL if invalid
+                        conn.execute(
+                            text("UPDATE articles SET firecrawl_metadata = NULL WHERE id = :id"), {"id": row[0]}
+                        )
+
+                conn.commit()
+                logger.info("Existing JSON data conversion completed")
+    except Exception as e:
+        logger.error(f"Error converting existing JSON data: {e}")
 
 
 def migrate_database():
@@ -70,10 +113,16 @@ def migrate_database():
 
             conn.commit()
 
+        # Convert existing JSON data to proper format
+        convert_existing_json_data(engine)
+
         logger.info("Database migration completed successfully")
 
-        # Create JSON index if needed (optional, for better performance)
+        # Create index for better performance
         with engine.connect() as conn:
+            # Remove old index if exists (in case of schema changes)
+            conn.execute(text("DROP INDEX IF EXISTS idx_firecrawl_metadata"))
+            # Create new index
             conn.execute(
                 text(
                     """

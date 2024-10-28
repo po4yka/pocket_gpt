@@ -1,6 +1,13 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,pycharm+all,visualstudiocode,macos
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,pycharm+all,visualstudiocode,macos
 
+### Media ###
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
 ### Database ###
 **/*.db
 

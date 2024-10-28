@@ -1,8 +1,8 @@
-import time
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from firecrawl import FirecrawlApp
 from loguru import logger
@@ -36,16 +36,8 @@ class FetchError:
 
 
 class ContentFetcher:
-    """
-    A class for fetching and saving content from web articles using the Firecrawl SDK.
+    """A class for fetching and saving content from web articles using the Firecrawl SDK."""
 
-    Rate Limits:
-    - 3,000 pages total
-    - 20 /scrape requests per minute
-    - 3 /crawl requests per minute
-    """
-
-    # Social media domains that are known to be blocked
     SOCIAL_MEDIA_DOMAINS = {
         "twitter.com",
         "x.com",
@@ -61,12 +53,9 @@ class ContentFetcher:
         session: Session,
         min_wait_time: float = 3.0,
     ):
-        """Initialize the ContentFetcher with a database session."""
         self.session = session
         self.min_wait_time = min_wait_time
         self.firecrawl = FirecrawlApp(api_key=FIRECRAWL_API_KEY)
-
-        # Statistics tracking
         self.stats = {
             "total_processed": 0,
             "successful": 0,
@@ -76,25 +65,10 @@ class ContentFetcher:
             "rate_limited": 0,
             "other_errors": 0,
         }
-
-        # Error tracking
         self.failed_articles: Dict[str, List[FetchError]] = {}
-
-        # Rate limiting state
         self.last_request_time = 0.0
 
-        logger.info("ContentFetcher initialized with Firecrawl SDK")
-
-    def _wait_for_rate_limit(self):
-        """Ensure minimum wait time between requests."""
-        current_time = time.time()
-        time_since_last_request = current_time - self.last_request_time
-        if time_since_last_request < self.min_wait_time:
-            wait_time = self.min_wait_time - time_since_last_request
-            time.sleep(wait_time)
-        self.last_request_time = time.time()
-
-    def _log_failure(self, article: Article, error: FetchError):
+    def _log_failure(self, article: Article, error: FetchError) -> None:
         """Log a failure for an article."""
         if article.pocket_id not in self.failed_articles:
             self.failed_articles[article.pocket_id] = []
@@ -114,15 +88,41 @@ class ContentFetcher:
 
         logger.warning(error_message)
 
+    def _sanitize_text(self, text: Optional[str]) -> Optional[str]:
+        """Sanitize text content for database storage."""
+        if text is None:
+            return None
+        # Convert to string and handle any special characters
+        return str(text).encode("utf-8", errors="ignore").decode("utf-8")
+
+    def _sanitize_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Sanitize metadata dictionary for JSON storage."""
+        # Remove any problematic values and ensure all values are JSON-serializable
+        cleaned_metadata = {}
+        for key, value in metadata.items():
+            try:
+                # Test if the value is JSON serializable
+                json.dumps({key: value})
+                cleaned_metadata[key] = value
+            except (TypeError, ValueError):
+                # If not serializable, convert to string
+                cleaned_metadata[key] = str(value)
+        return cleaned_metadata
+
+    def _sanitize_authors(self, authors: Union[List[str], str, None]) -> Optional[str]:
+        """Sanitize and format author information."""
+        if not authors:
+            return None
+        if isinstance(authors, list):
+            return ", ".join(str(author) for author in authors)
+        return str(authors)
+
     def fetch_and_save_content(self, article: Article) -> bool:
         """Fetch content for a single article and save it to the database."""
         if not article.url:
             error = FetchError(type=FetchErrorType.NO_URL, message="No URL provided for article")
             self._log_failure(article, error)
             return False
-
-        # Wait for rate limit
-        self._wait_for_rate_limit()
 
         try:
             logger.info(f"Fetching content for article: {article.pocket_id}")
@@ -132,7 +132,7 @@ class ContentFetcher:
                 params={
                     "formats": ["markdown", "html"],
                     "onlyMainContent": True,
-                    "waitFor": 3000,  # Wait 3 seconds for dynamic content
+                    "waitFor": 3000,
                 },
             )
 
@@ -141,27 +141,32 @@ class ContentFetcher:
                 self._log_failure(article, error)
                 return False
 
-            # Store the content
-            article.content = response.get("markdown", "")
-            article.content_html = response.get("html", "")
+            # Sanitize the content before saving
+            article.content = self._sanitize_text(response.get("markdown", ""))
+            article.content_html = self._sanitize_text(response.get("html", ""))
 
             # Update metadata
             metadata = response.get("metadata", {})
             if metadata:
                 if not article.title and metadata.get("title"):
-                    article.title = metadata.get("title")
-                article.author = metadata.get("author")
-                article.firecrawl_metadata = metadata
+                    article.title = self._sanitize_text(metadata.get("title"))
+                article.author = self._sanitize_authors(metadata.get("author"))
+                # Sanitize and store metadata
+                article.firecrawl_metadata = self._sanitize_metadata(metadata)
 
-            self.session.commit()
-            logger.info(f"Content and metadata saved for article: {article.pocket_id}")
-            return True
+            try:
+                self.session.commit()
+                logger.info(f"Content and metadata saved for article: {article.pocket_id}")
+                return True
+            except Exception as e:
+                self.session.rollback()
+                logger.error(f"Database error while saving article {article.pocket_id}: {e}")
+                raise
 
         except Exception as e:
             error_type = FetchErrorType.UNKNOWN
             error_message = str(e)
 
-            # Check for known error messages
             error_str = str(e).lower()
             if "rate limit" in error_str:
                 error_type = FetchErrorType.RATE_LIMIT
@@ -175,7 +180,6 @@ class ContentFetcher:
             error = FetchError(type=error_type, message=error_message)
             self._log_failure(article, error)
 
-            # Update statistics
             if error_type == FetchErrorType.SOCIAL_MEDIA:
                 self.stats["social_media_blocked"] += 1
             elif error_type == FetchErrorType.BLOCKED_URL:
@@ -186,62 +190,3 @@ class ContentFetcher:
                 self.stats["other_errors"] += 1
 
             return False
-
-    def fetch_content_for_all_articles(self) -> None:
-        """Fetch content for all articles without content."""
-        logger.info("Starting content fetch for all articles without content")
-
-        # Clear previous tracking
-        self.failed_articles.clear()
-        self.stats = {key: 0 for key in self.stats}
-
-        articles = (
-            self.session.query(Article)
-            .filter((Article.content.is_(None) | (Article.content == "")) & (Article.url.isnot(None)))
-            .all()
-        )
-
-        total_articles = len(articles)
-        logger.info(f"Found {total_articles} articles without content")
-
-        try:
-            for index, article in enumerate(articles, 1):
-                logger.info(f"Processing article {index}/{total_articles}: {article.pocket_id}")
-
-                self.stats["total_processed"] += 1
-
-                try:
-                    success = self.fetch_and_save_content(article)
-                    if success:
-                        self.stats["successful"] += 1
-                    else:
-                        self.stats["failed"] += 1
-                except Exception as e:
-                    self.stats["failed"] += 1
-                    error = FetchError(type=FetchErrorType.UNKNOWN, message=f"Unexpected error: {str(e)}")
-                    self._log_failure(article, error)
-                    logger.exception(f"Error processing article {article.pocket_id}")
-                    continue
-
-        finally:
-            # Log final statistics
-            logger.info("\nProcessing Complete")
-            logger.info("=" * 50)
-            logger.info(f"Total processed: {self.stats['total_processed']}")
-            logger.info(f"Successful: {self.stats['successful']}")
-            logger.info(f"Failed: {self.stats['failed']}")
-            logger.info(f"Social media blocked: {self.stats['social_media_blocked']}")
-            logger.info(f"Other blocked URLs: {self.stats['blocked_urls']}")
-            logger.info(f"Rate limited: {self.stats['rate_limited']}")
-            logger.info(f"Other errors: {self.stats['other_errors']}")
-
-            if self.failed_articles:
-                logger.warning("\nFailed Articles:")
-                for pocket_id, errors in self.failed_articles.items():
-                    logger.warning(f"\nArticle {pocket_id}:")
-                    for error in errors:
-                        logger.warning(f"- {error.type.name}: {error.message}")
-
-    def get_processing_stats(self) -> Dict[str, int]:
-        """Get current processing statistics."""
-        return self.stats.copy()
