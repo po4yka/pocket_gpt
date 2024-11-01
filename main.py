@@ -26,6 +26,9 @@ def main():
     parser.add_argument("--list-incomplete", action="store_true", help="List articles without title and description")
     parser.add_argument("--list-articles", action="store_true", help="List all fetched articles")
     parser.add_argument("--db-info", action="store_true", help="Get database information")
+    parser.add_argument(
+        "--delete-processed", action="store_true", help="Delete articles from Pocket that have content and URL"
+    )
     args = parser.parse_args()
 
     try:
@@ -62,6 +65,9 @@ def main():
 
             if args.db_info:
                 get_database_info(session)
+
+            if args.delete_processed:
+                delete_processed_articles(session, pocket_client)
 
         except Exception as e:
             logger.error(f"Error during execution: {str(e)}")
@@ -235,6 +241,40 @@ def get_database_info(session):
     logger.info(f"Articles with content: {articles_with_content}")
     logger.info(f"Articles with summary: {articles_with_summary}")
     logger.info(f"Articles with tags: {articles_with_tags}")
+
+
+def delete_processed_articles(session, pocket_client):
+    """Delete articles from Pocket that have content and URL."""
+    logger.info("Finding articles with content and URL to delete from Pocket")
+
+    articles = (
+        session.query(Article)
+        .filter(Article.content.isnot(None), Article.url.isnot(None), Article.content != "", Article.url != "")
+        .all()
+    )
+
+    if not articles:
+        logger.info("No articles found to delete.")
+        return
+
+    logger.info(f"Found {len(articles)} articles to delete")
+
+    success_count = 0
+    fail_count = 0
+
+    for article in articles:
+        logger.info(f"Deleting article {article.pocket_id} from Pocket...")
+        if pocket_client.delete_article(article.pocket_id):
+            success_count += 1
+        else:
+            fail_count += 1
+        time.sleep(1)  # Rate limiting precaution
+
+    logger.info("\nDeletion Summary:")
+    logger.info("=" * 50)
+    logger.info(f"Total articles processed: {len(articles)}")
+    logger.info(f"Successfully deleted: {success_count}")
+    logger.info(f"Failed to delete: {fail_count}")
 
 
 if __name__ == "__main__":

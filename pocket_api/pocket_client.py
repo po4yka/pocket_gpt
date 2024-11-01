@@ -128,3 +128,24 @@ class PocketClient:
             self._save_articles_to_db(data["list"])
 
         logger.info("Sync completed.")
+
+    def delete_article(self, pocket_id: str) -> bool:
+        """Delete an article from Pocket."""
+        url = "https://getpocket.com/v3/send"
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "actions": [{"action": "delete", "item_id": pocket_id}],
+        }
+
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                logger.info(f"Successfully deleted article {pocket_id} from Pocket")
+                return True
+            else:
+                logger.error(f"Failed to delete article {pocket_id}: {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Error deleting article {pocket_id}: {e}")
+            return False
