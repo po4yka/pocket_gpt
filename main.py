@@ -29,6 +29,7 @@ def main():
     parser.add_argument(
         "--delete-processed", action="store_true", help="Delete articles from Pocket that have content and URL"
     )
+    parser.add_argument("--check-sync", action="store_true", help="Check sync status with Pocket service")
     args = parser.parse_args()
 
     try:
@@ -68,6 +69,9 @@ def main():
 
             if args.delete_processed:
                 delete_processed_articles(session, pocket_client)
+
+            if args.check_sync:
+                check_pocket_sync_status(session, pocket_client)
 
         except Exception as e:
             logger.error(f"Error during execution: {str(e)}")
@@ -275,6 +279,38 @@ def delete_processed_articles(session, pocket_client):
     logger.info(f"Total articles processed: {len(articles)}")
     logger.info(f"Successfully deleted: {success_count}")
     logger.info(f"Failed to delete: {fail_count}")
+
+
+def check_pocket_sync_status(session, pocket_client):
+    """Check the sync status between local database and Pocket service."""
+    logger.info("Checking Pocket sync status...")
+
+    status = pocket_client.get_sync_status()
+
+    if "error" in status:
+        if "Authentication failed" in status["error"]:
+            logger.error("Authentication failed. Please check your credentials or run --authenticate")
+            logger.info("Make sure POCKET_CONSUMER_KEY and POCKET_ACCESS_TOKEN are set in your .env file")
+        else:
+            logger.error(f"Failed to check sync status: {status['error']}")
+        return
+
+    logger.info("\nSync Status Summary:")
+    logger.info("=" * 50)
+    logger.info(f"Articles in Pocket service: {status['pocket_count']}")
+    logger.info(f"Articles in local database: {status['local_count']}")
+
+    if not status["is_synced"]:
+        diff = status["pocket_count"] - status["local_count"]
+        if diff > 0:
+            logger.info(f"\nFound {diff} articles missing locally")
+            logger.info("To sync missing articles, run:")
+            logger.info("  python main.py --fetch-pocket")
+        else:
+            logger.info(f"\nFound {abs(diff)} extra articles in local database")
+            logger.info("Local database contains more articles than Pocket service")
+    else:
+        logger.info("\nAll Pocket articles are synced locally ✓")
 
 
 if __name__ == "__main__":

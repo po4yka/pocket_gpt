@@ -149,3 +149,59 @@ class PocketClient:
         except Exception as e:
             logger.error(f"Error deleting article {pocket_id}: {e}")
             return False
+
+    def get_sync_status(self) -> Dict[str, Any]:
+        """Get sync status between Pocket service and local database."""
+        # First check if we have valid credentials
+        if not self.consumer_key or not self.access_token:
+            logger.error("Missing Pocket API credentials")
+            return {"error": "Missing credentials"}
+
+        # Get total count from Pocket
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "state": "all",  # Get both unread and archived items
+            "count": 1,  # Only need one item to get total
+            "detailType": "simple",  # Minimize data transfer
+            "total": 1,  # Request total count in response
+        }
+
+        try:
+            logger.info("Fetching Pocket article count...")
+            response = requests.post(
+                POCKET_GET_URL,
+                json=payload,
+                headers={"Content-Type": "application/json", "X-Accept": "application/json"},
+            )
+
+            if response.status_code == 401:
+                logger.error("Invalid or expired access token")
+                return {"error": "Authentication failed"}
+
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch articles: {response.text}")
+                return {"error": f"API error: {response.text}"}
+
+            self._check_rate_limit(cast(CaseInsensitiveDict[str], response.headers))
+
+            data = response.json()
+            if "status" not in data or data["status"] != 1:
+                logger.error(f"Invalid response from Pocket API: {data}")
+                return {"error": "Invalid API response"}
+
+            total_pocket_count = int(data.get("total", 0))
+
+            # Get local count from database
+            local_count = self.session.query(Article).count()
+
+            return {
+                "pocket_count": total_pocket_count,
+                "local_count": local_count,
+                "is_synced": total_pocket_count == local_count,
+                "status": "success",
+            }
+
+        except Exception as e:
+            logger.error(f"Error checking sync status: {str(e)}")
+            return {"error": f"Unexpected error: {str(e)}"}
