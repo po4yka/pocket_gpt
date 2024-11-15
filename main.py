@@ -43,6 +43,11 @@ def main():
         action="store_true",
         help="Load missing articles from Pocket into the local database",
     )
+    actions_group.add_argument(
+        "--delete-all",
+        action="store_true",
+        help="Delete all articles from the local database and Pocket account",
+    )
 
     info_group.add_argument("--list-incomplete", action="store_true", help="List articles without title or URL")
     info_group.add_argument("--list-articles", action="store_true", help="List all fetched articles")
@@ -97,6 +102,8 @@ def main():
                 logger.info("Article Data:\n" + json.dumps(article_data, indent=4, ensure_ascii=False))
             else:
                 logger.info("No article found for the provided URL.")
+        if args.delete_all:
+            pocket_client.delete_all_articles()
     finally:
         session.close()
 

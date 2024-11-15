@@ -150,27 +150,6 @@ class PocketClient:
 
         logger.info("Sync completed.")
 
-    def delete_article(self, pocket_id: str) -> bool:
-        """Delete an article from Pocket."""
-        url = "https://getpocket.com/v3/send"
-        payload = {
-            "consumer_key": self.consumer_key,
-            "access_token": self.access_token,
-            "actions": [{"action": "delete", "item_id": pocket_id}],
-        }
-
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                logger.info(f"Successfully deleted article {pocket_id} from Pocket")
-                return True
-            else:
-                logger.error(f"Failed to delete article {pocket_id}: {response.text}")
-                return False
-        except Exception as e:
-            logger.error(f"Error deleting article {pocket_id}: {e}")
-            return False
-
     def get_sync_status(self) -> Dict[str, Any]:
         """Get sync status between Pocket service and local database."""
         # First check if we have valid credentials
@@ -388,3 +367,62 @@ class PocketClient:
         except Exception as e:
             logger.error(f"Error retrieving article by URL: {e}")
             return None
+
+    def delete_all_articles(self) -> None:
+        """
+        Delete all articles from the local database and the user's Pocket account.
+
+        This function uses Pocket's /v3/send API to batch delete articles and logs the results.
+        """
+        logger.info("Starting deletion of all articles from the local database and Pocket account.")
+
+        # Fetch all articles from the local database
+        articles = self.session.query(Article).all()
+        if not articles:
+            logger.info("No articles found in the local database. Nothing to delete.")
+            return
+
+        logger.info(f"Found {len(articles)} articles in the local database.")
+
+        # Prepare actions for Pocket API batch deletion
+        actions = [{"action": "delete", "item_id": article.pocket_id} for article in articles]
+
+        # Send delete actions to Pocket API
+        pocket_delete_url = "https://getpocket.com/v3/send"
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "actions": actions,
+        }
+
+        try:
+            logger.info("Sending batch delete request to Pocket API.")
+            response = requests.post(pocket_delete_url, json=payload)
+            response_data = response.json()
+
+            if response.status_code == 200 and response_data.get("status") == 1:
+                logger.info("Batch delete request completed successfully on Pocket API.")
+                action_results = response_data.get("action_results", [])
+                success_count = action_results.count(True)
+                failure_count = len(action_results) - success_count
+                logger.info(f"Pocket API results: Success={success_count}, Failures={failure_count}")
+            else:
+                logger.error(f"Pocket API batch delete failed: {response_data}")
+                raise Exception(f"Pocket API error: {response_data.get('error', 'Unknown error')}")
+
+        except Exception as e:
+            logger.error(f"Error deleting articles from Pocket: {e}")
+            raise
+
+        # Delete all articles from the local database
+        try:
+            logger.info("Deleting all articles from the local database.")
+            self.session.query(Article).delete()
+            self.session.commit()
+            logger.info("All articles successfully deleted from the local database.")
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error deleting articles from the local database: {e}")
+            raise
+
+        logger.info("Completed deletion of all articles.")
