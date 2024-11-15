@@ -1,3 +1,4 @@
+import time
 from time import sleep
 from typing import Any, Dict, List, Optional, cast
 
@@ -368,11 +369,11 @@ class PocketClient:
             logger.error(f"Error retrieving article by URL: {e}")
             return None
 
-    def delete_all_articles(self, batch_size=25) -> None:
+    def delete_all_articles(self, batch_size=25, delay_between_batches=5) -> None:
         """
         Delete all articles from the local database and the user's Pocket account in batches.
 
-        Handles timeouts and retries using batch processing and exponential backoff.
+        Introduces a delay between each batch to prevent rate limiting.
         """
         logger.info("Starting deletion of all articles from the local database and Pocket account.")
 
@@ -390,12 +391,18 @@ class PocketClient:
         # Process in batches
         for batch_start in range(0, len(actions), batch_size):
             batch_actions = actions[batch_start : batch_start + batch_size]
-            logger.info(f"Processing batch {batch_start // batch_size + 1} with {len(batch_actions)} articles.")
+            batch_number = batch_start // batch_size + 1
 
+            logger.info(f"Processing batch {batch_number} with {len(batch_actions)} articles.")
             try:
                 self._delete_articles_batch(batch_actions)
             except Exception as e:
-                logger.error(f"Failed to delete batch starting at index {batch_start}: {e}")
+                logger.error(f"Failed to delete batch {batch_number}: {e}")
+
+            # Add delay between batches
+            if batch_start + batch_size < len(actions):  # Avoid delay after the last batch
+                logger.info(f"Waiting {delay_between_batches} seconds before processing the next batch.")
+                time.sleep(delay_between_batches)
 
         # Delete all articles from the local database
         try:
@@ -414,6 +421,7 @@ class PocketClient:
     def _delete_articles_batch(self, batch_actions):
         """
         Delete a batch of articles using Pocket's API with retry logic.
+        Handles null values in the 'action_errors' array gracefully.
         """
         pocket_delete_url = "https://getpocket.com/v3/send"
         payload = {
@@ -452,10 +460,13 @@ class PocketClient:
             failure_count = len(action_results) - success_count
             logger.info(f"Pocket API results: Success={success_count}, Failures={failure_count}")
 
-            # Log detailed action errors
-            if "action_errors" in response_data:
-                for i, error in enumerate(response_data["action_errors"]):
+            # Log detailed action errors, skipping null values
+            action_errors = response_data.get("action_errors", [])
+            for i, error in enumerate(action_errors):
+                if error is not None:  # Only log non-null errors
                     logger.error(f"Action {i} Error: {error}")
+                else:
+                    logger.debug(f"Action {i}: No error (null in action_errors).")
 
         else:
             logger.error(f"Pocket API reported failure: {response_data}")
