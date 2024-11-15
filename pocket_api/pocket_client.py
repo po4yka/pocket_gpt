@@ -205,3 +205,24 @@ class PocketClient:
         except Exception as e:
             logger.error(f"Error checking sync status: {str(e)}")
             return {"error": f"Unexpected error: {str(e)}"}
+
+    def add_tags_to_article(self, pocket_id: str, tags: list[str]) -> bool:
+        """Add tags to a specific article in Pocket."""
+        url = "https://getpocket.com/v3/send"
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "actions": [{"action": "tags_add", "item_id": pocket_id, "tags": ",".join(tags)}],
+        }
+
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                logger.info(f"Successfully added tags to article {pocket_id}")
+                return True
+            else:
+                logger.error(f"Failed to add tags to article {pocket_id}: {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Error adding tags to article {pocket_id}: {e}")
+            return False

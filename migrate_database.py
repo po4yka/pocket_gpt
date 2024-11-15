@@ -72,7 +72,8 @@ def convert_existing_json_data(engine: Engine) -> None:
                         logger.warning(f"Failed to convert JSON data for article ID {row[0]}: {e}")
                         # Set to NULL if invalid
                         conn.execute(
-                            text("UPDATE articles SET firecrawl_metadata = NULL WHERE id = :id"), {"id": row[0]}
+                            text("UPDATE articles SET firecrawl_metadata = NULL WHERE id = :id"),
+                            {"id": row[0]},
                         )
 
                 conn.commit()
