@@ -343,3 +343,48 @@ class PocketClient:
                 logger.info(f"Batch {i // batch_size + 1} loaded successfully.")
             except Exception as e:
                 logger.error(f"Error fetching batch {i // batch_size + 1}: {str(e)}")
+
+    def get_article_by_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve article information by its original URL.
+
+        Args:
+            url (str): The original URL of the article to retrieve.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary containing the article information if found, None otherwise.
+        """
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "search": url,
+            "detailType": "complete",
+        }
+
+        logger.info(f"Fetching article by URL: {url}")
+
+        try:
+            response = requests.post(POCKET_GET_URL, json=payload)
+
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch article by URL. Response: {response.text}")
+                return None
+
+            data = response.json()
+            articles = data.get("list", {})
+
+            if not articles:
+                logger.warning(f"No article found for URL: {url}")
+                return None
+
+            # Pocket API can return multiple matches; we take the first one
+            first_article = next(iter(articles.values()), None)
+            if first_article:
+                logger.info(f"Article found for URL: {url}")
+                return first_article
+            else:
+                logger.warning(f"No valid article data for URL: {url}")
+                return None
+        except Exception as e:
+            logger.error(f"Error retrieving article by URL: {e}")
+            return None

@@ -1,4 +1,5 @@
 import argparse
+import json
 
 from loguru import logger
 
@@ -13,6 +14,7 @@ from operations.fetch_operations import (
 from operations.process_operations import process_articles_with_gpt
 from operations.sync_operations import update_pocket_tags
 from operations.utils import get_database_info
+from pocket_api.auth import PocketAuth
 from pocket_api.pocket_client import PocketClient
 
 
@@ -52,6 +54,8 @@ def main():
         help="List articles in Pocket that are not in the local database",
     )
 
+    parser.add_argument("--get-article-by-url", type=str, help="Get article information by its original URL")
+
     args = parser.parse_args()
 
     session = get_session()
@@ -78,8 +82,6 @@ def main():
             db_info = get_database_info(session)
             logger.info(f"Database Info: {db_info}")
         if args.check_auth_status:
-            from pocket_api.auth import PocketAuth
-
             pocket_auth = PocketAuth()
             auth_status = pocket_auth.check_authentication_status()
             logger.info(f"Authentication Status: {auth_status}")
@@ -89,6 +91,12 @@ def main():
                 logger.info(f"Missing Article ID: {pocket_id}")
         if args.load_missing:
             pocket_client.load_missing_articles(batch_size=5)
+        if args.get_article_by_url:
+            article_data = pocket_client.get_article_by_url(args.get_article_by_url)
+            if article_data:
+                logger.info("Article Data:\n" + json.dumps(article_data, indent=4, ensure_ascii=False))
+            else:
+                logger.info("No article found for the provided URL.")
     finally:
         session.close()
 
