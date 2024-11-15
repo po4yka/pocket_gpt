@@ -8,6 +8,7 @@ load_dotenv()
 # Pocket API credentials
 POCKET_CONSUMER_KEY = os.getenv("POCKET_CONSUMER_KEY")
 POCKET_ACCESS_TOKEN = os.getenv("POCKET_ACCESS_TOKEN")
+POCKET_REQUEST_TOKEN = os.getenv("POCKET_REQUEST_TOKEN")
 
 # OpenAI API key
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

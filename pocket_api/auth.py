@@ -1,10 +1,9 @@
-import os
 import webbrowser
 
 import requests
 from loguru import logger
 
-from config import POCKET_CONSUMER_KEY
+from config import POCKET_ACCESS_TOKEN, POCKET_CONSUMER_KEY, POCKET_REQUEST_TOKEN
 
 POCKET_REQUEST_URL = "https://getpocket.com/v3/oauth/request"
 POCKET_AUTHORIZE_URL = "https://getpocket.com/auth/authorize"
@@ -15,8 +14,8 @@ class PocketAuth:
     def __init__(self, redirect_uri="http://localhost"):
         self.consumer_key = POCKET_CONSUMER_KEY
         self.redirect_uri = redirect_uri
-        self.request_token = os.getenv("POCKET_REQUEST_TOKEN")
-        self.access_token = os.getenv("POCKET_ACCESS_TOKEN")
+        self.request_token = POCKET_REQUEST_TOKEN
+        self.access_token = POCKET_ACCESS_TOKEN
 
     def get_request_token(self):
         """Step 2: Obtain a request token."""
