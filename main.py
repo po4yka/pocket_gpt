@@ -36,6 +36,11 @@ def main():
         action="store_true",
         help="Update Pocket articles with newly generated tags",
     )
+    actions_group.add_argument(
+        "--load-missing",
+        action="store_true",
+        help="Load missing articles from Pocket into the local database",
+    )
 
     info_group.add_argument("--list-incomplete", action="store_true", help="List articles without title or URL")
     info_group.add_argument("--list-articles", action="store_true", help="List all fetched articles")
@@ -82,6 +87,8 @@ def main():
             missing_articles = pocket_client.get_articles_not_in_db()
             for pocket_id in missing_articles:
                 logger.info(f"Missing Article ID: {pocket_id}")
+        if args.load_missing:
+            pocket_client.load_missing_articles(batch_size=5)
     finally:
         session.close()
 
