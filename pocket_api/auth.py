@@ -1,3 +1,4 @@
+import os
 import webbrowser
 
 import requests
@@ -14,8 +15,8 @@ class PocketAuth:
     def __init__(self, redirect_uri="http://localhost"):
         self.consumer_key = POCKET_CONSUMER_KEY
         self.redirect_uri = redirect_uri
-        self.request_token = None
-        self.access_token = None
+        self.request_token = os.getenv("POCKET_REQUEST_TOKEN")
+        self.access_token = os.getenv("POCKET_ACCESS_TOKEN")
 
     def get_request_token(self):
         """Step 2: Obtain a request token."""
@@ -84,3 +85,40 @@ class PocketAuth:
         self.get_request_token()
         self.authorize_app()
         return self.get_access_token()
+
+    def check_authentication_status(self):
+        """
+        Check if Pocket API credentials (consumer key and access token) are valid.
+        Returns a dictionary with the status and details.
+        """
+        if not self.consumer_key:
+            logger.error("Missing Pocket consumer key.")
+            return {"status": "error", "message": "Consumer key is missing."}
+
+        if not self.access_token:
+            logger.warning("Missing Pocket access token.")
+            return {"status": "error", "message": "Access token is missing."}
+
+        # Make a test request to verify the access token
+        test_url = "https://getpocket.com/v3/get"
+        headers = {"Content-Type": "application/json", "X-Accept": "application/json"}
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "count": 1,  # Minimal request to verify credentials
+        }
+
+        try:
+            response = requests.post(test_url, headers=headers, json=payload)
+            if response.status_code == 200:
+                logger.info("Pocket authentication verified successfully.")
+                return {"status": "success", "message": "Authentication is valid."}
+            elif response.status_code == 401:
+                logger.error("Invalid or expired Pocket access token.")
+                return {"status": "error", "message": "Invalid or expired access token."}
+            else:
+                logger.error(f"Unexpected API response: {response.text}")
+                return {"status": "error", "message": f"API error: {response.text}"}
+        except Exception as e:
+            logger.error(f"Error while verifying authentication: {e}")
+            return {"status": "error", "message": f"Unexpected error: {str(e)}"}

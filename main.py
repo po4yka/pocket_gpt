@@ -40,6 +40,7 @@ def main():
     info_group.add_argument("--list-incomplete", action="store_true", help="List articles without title or URL")
     info_group.add_argument("--list-articles", action="store_true", help="List all fetched articles")
     info_group.add_argument("--db-info", action="store_true", help="Display database statistics")
+    info_group.add_argument("--check-auth-status", action="store_true", help="Check Pocket API authentication status")
 
     args = parser.parse_args()
 
@@ -66,6 +67,12 @@ def main():
         if args.db_info:
             db_info = get_database_info(session)
             logger.info(f"Database Info: {db_info}")
+        if args.check_auth_status:
+            from pocket_api.auth import PocketAuth
+
+            pocket_auth = PocketAuth()
+            auth_status = pocket_auth.check_authentication_status()
+            logger.info(f"Authentication Status: {auth_status}")
     finally:
         session.close()
 
