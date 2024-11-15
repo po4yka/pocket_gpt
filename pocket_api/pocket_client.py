@@ -368,11 +368,11 @@ class PocketClient:
             logger.error(f"Error retrieving article by URL: {e}")
             return None
 
-    def delete_all_articles(self) -> None:
+    def delete_all_articles(self, batch_size=25) -> None:
         """
-        Delete all articles from the local database and the user's Pocket account.
+        Delete all articles from the local database and the user's Pocket account in batches.
 
-        This function uses Pocket's /v3/send API to batch delete articles and logs the results.
+        Handles timeouts and retries using batch processing and exponential backoff.
         """
         logger.info("Starting deletion of all articles from the local database and Pocket account.")
 
@@ -384,35 +384,18 @@ class PocketClient:
 
         logger.info(f"Found {len(articles)} articles in the local database.")
 
-        # Prepare actions for Pocket API batch deletion
+        # Prepare articles for batch processing
         actions = [{"action": "delete", "item_id": article.pocket_id} for article in articles]
 
-        # Send delete actions to Pocket API
-        pocket_delete_url = "https://getpocket.com/v3/send"
-        payload = {
-            "consumer_key": self.consumer_key,
-            "access_token": self.access_token,
-            "actions": actions,
-        }
+        # Process in batches
+        for batch_start in range(0, len(actions), batch_size):
+            batch_actions = actions[batch_start : batch_start + batch_size]
+            logger.info(f"Processing batch {batch_start // batch_size + 1} with {len(batch_actions)} articles.")
 
-        try:
-            logger.info("Sending batch delete request to Pocket API.")
-            response = requests.post(pocket_delete_url, json=payload)
-            response_data = response.json()
-
-            if response.status_code == 200 and response_data.get("status") == 1:
-                logger.info("Batch delete request completed successfully on Pocket API.")
-                action_results = response_data.get("action_results", [])
-                success_count = action_results.count(True)
-                failure_count = len(action_results) - success_count
-                logger.info(f"Pocket API results: Success={success_count}, Failures={failure_count}")
-            else:
-                logger.error(f"Pocket API batch delete failed: {response_data}")
-                raise Exception(f"Pocket API error: {response_data.get('error', 'Unknown error')}")
-
-        except Exception as e:
-            logger.error(f"Error deleting articles from Pocket: {e}")
-            raise
+            try:
+                self._delete_articles_batch(batch_actions)
+            except Exception as e:
+                logger.error(f"Failed to delete batch starting at index {batch_start}: {e}")
 
         # Delete all articles from the local database
         try:
@@ -426,3 +409,54 @@ class PocketClient:
             raise
 
         logger.info("Completed deletion of all articles.")
+
+    @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+    def _delete_articles_batch(self, batch_actions):
+        """
+        Delete a batch of articles using Pocket's API with retry logic.
+        """
+        pocket_delete_url = "https://getpocket.com/v3/send"
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "actions": batch_actions,
+        }
+
+        logger.info("Sending batch delete request to Pocket API.")
+        response = requests.post(pocket_delete_url, json=payload)
+
+        # Log raw response details for debugging
+        logger.debug(f"Response Status Code: {response.status_code}")
+        logger.debug(f"Response Content: {response.text[:500]}")  # Log the first 500 characters
+
+        if response.headers.get("Content-Type", "").startswith("text/html"):
+            logger.error("Received an HTML response instead of JSON.")
+            raise Exception("Unexpected HTML response from Pocket API.")
+
+        if response.status_code != 200:
+            logger.error(f"Pocket API returned an error. Status Code: {response.status_code}")
+            response.raise_for_status()
+
+        try:
+            response_data = response.json()
+        except ValueError as e:
+            logger.error(f"Error decoding JSON response: {e}")
+            logger.error(f"Response Content: {response.text}")
+            raise Exception("Invalid response from Pocket API. Expected JSON format.") from e
+
+        # Log action results
+        if response_data.get("status") == 1:
+            logger.info("Batch delete request completed successfully on Pocket API.")
+            action_results = response_data.get("action_results", [])
+            success_count = action_results.count(True)
+            failure_count = len(action_results) - success_count
+            logger.info(f"Pocket API results: Success={success_count}, Failures={failure_count}")
+
+            # Log detailed action errors
+            if "action_errors" in response_data:
+                for i, error in enumerate(response_data["action_errors"]):
+                    logger.error(f"Action {i} Error: {error}")
+
+        else:
+            logger.error(f"Pocket API reported failure: {response_data}")
+            raise Exception(f"Pocket API error: {response_data.get('error', 'Unknown error')}")

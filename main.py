@@ -65,6 +65,7 @@ def main():
 
     session = get_session()
     pocket_client = PocketClient(session)
+    pocket_auth = PocketAuth()
     content_fetcher = ContentFetcher(session)
     openai_processor = OpenAIProcessor()
 
@@ -87,7 +88,6 @@ def main():
             db_info = get_database_info(session)
             logger.info(f"Database Info: {db_info}")
         if args.check_auth_status:
-            pocket_auth = PocketAuth()
             auth_status = pocket_auth.check_authentication_status()
             logger.info(f"Authentication Status: {auth_status}")
         if args.list_missing:
@@ -103,6 +103,8 @@ def main():
             else:
                 logger.info("No article found for the provided URL.")
         if args.delete_all:
+            auth_status = pocket_auth.check_authentication_status()
+            logger.info(f"Authentication Status: {auth_status}")
             pocket_client.delete_all_articles()
     finally:
         session.close()
