@@ -1,5 +1,5 @@
 from time import sleep
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 from loguru import logger
@@ -226,3 +226,39 @@ class PocketClient:
         except Exception as e:
             logger.error(f"Error adding tags to article {pocket_id}: {e}")
             return False
+
+    def get_articles_not_in_db(self) -> List[str]:
+        """
+        Check for articles in Pocket that are not in the local database.
+        Returns a list of Pocket IDs for these articles.
+        """
+        # Fetch all articles from Pocket
+        payload = {
+            "consumer_key": self.consumer_key,
+            "access_token": self.access_token,
+            "state": "all",  # Get all articles (unread and archived)
+            "detailType": "simple",  # Only basic details to minimize data transfer
+        }
+
+        logger.info("Fetching articles from Pocket...")
+        response = requests.post(
+            POCKET_GET_URL,
+            json=payload,
+            headers={"Content-Type": "application/json", "X-Accept": "application/json"},
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch articles from Pocket: {response.text}")
+            return []
+
+        pocket_articles = response.json().get("list", {})
+        pocket_ids = set(pocket_articles.keys())
+
+        # Fetch all Pocket IDs from the database
+        db_pocket_ids = {row[0] for row in self.session.query(Article.pocket_id).all()}
+
+        # Find IDs that are in Pocket but not in the database
+        missing_ids = pocket_ids - db_pocket_ids
+        logger.info(f"Found {len(missing_ids)} articles in Pocket that are not in the database.")
+
+        return list(missing_ids)

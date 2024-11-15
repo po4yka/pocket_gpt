@@ -41,6 +41,11 @@ def main():
     info_group.add_argument("--list-articles", action="store_true", help="List all fetched articles")
     info_group.add_argument("--db-info", action="store_true", help="Display database statistics")
     info_group.add_argument("--check-auth-status", action="store_true", help="Check Pocket API authentication status")
+    info_group.add_argument(
+        "--list-missing",
+        action="store_true",
+        help="List articles in Pocket that are not in the local database",
+    )
 
     args = parser.parse_args()
 
@@ -73,6 +78,10 @@ def main():
             pocket_auth = PocketAuth()
             auth_status = pocket_auth.check_authentication_status()
             logger.info(f"Authentication Status: {auth_status}")
+        if args.list_missing:
+            missing_articles = pocket_client.get_articles_not_in_db()
+            for pocket_id in missing_articles:
+                logger.info(f"Missing Article ID: {pocket_id}")
     finally:
         session.close()
 
