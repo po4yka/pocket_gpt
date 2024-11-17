@@ -61,7 +61,7 @@ class PocketClient:
     def fetch_all_articles(self) -> None:
         """Fetch all articles incrementally with rate limit handling."""
         offset = 0
-        count = 30  # Max allowed per request
+        count = 30
         more_articles = True
 
         # Initial call to get the total number of articles
@@ -207,7 +207,7 @@ class PocketClient:
             logger.error(f"Error checking sync status: {str(e)}")
             return {"error": f"Unexpected error: {str(e)}"}
 
-    def add_tags_to_article(self, pocket_id: str, tags: list[str]) -> bool:
+    def add_tags_to_article(self, pocket_id: str, tags: List[str]) -> bool:
         """Add tags to a specific article in Pocket."""
         url = "https://getpocket.com/v3/send"
         payload = {
@@ -218,6 +218,8 @@ class PocketClient:
 
         try:
             response = requests.post(url, json=payload)
+            self._check_rate_limit(cast(CaseInsensitiveDict[str], response.headers))
+
             if response.status_code == 200:
                 logger.info(f"Successfully added tags to article {pocket_id}")
                 return True
@@ -239,6 +241,7 @@ class PocketClient:
             "access_token": self.access_token,
             "state": "all",  # Get all articles (unread and archived)
             "detailType": "simple",  # Only basic details to minimize data transfer
+            "count": 30,
         }
 
         logger.info("Fetching articles from Pocket...")
@@ -251,6 +254,8 @@ class PocketClient:
         if response.status_code != 200:
             logger.error(f"Failed to fetch articles from Pocket: {response.text}")
             return []
+
+        self._check_rate_limit(cast(CaseInsensitiveDict[str], response.headers))
 
         pocket_articles = response.json().get("list", {})
         pocket_ids = set(pocket_articles.keys())
@@ -283,6 +288,8 @@ class PocketClient:
             json=payload,
             headers={"Content-Type": "application/json", "X-Accept": "application/json"},
         )
+        self._check_rate_limit(cast(CaseInsensitiveDict[str], response.headers))
+
         if response.status_code != 200:
             raise Exception(f"Pocket API error: {response.text}")
         return response.json()
@@ -349,6 +356,8 @@ class PocketClient:
             if response.status_code != 200:
                 logger.error(f"Failed to fetch article by URL. Response: {response.text}")
                 return None
+
+            self._check_rate_limit(cast(CaseInsensitiveDict[str], response.headers))
 
             data = response.json()
             articles = data.get("list", {})
@@ -436,6 +445,8 @@ class PocketClient:
         # Log raw response details for debugging
         logger.debug(f"Response Status Code: {response.status_code}")
         logger.debug(f"Response Content: {response.text[:500]}")  # Log the first 500 characters
+
+        self._check_rate_limit(cast(CaseInsensitiveDict[str], response.headers))
 
         if response.headers.get("Content-Type", "").startswith("text/html"):
             logger.error("Received an HTML response instead of JSON.")
