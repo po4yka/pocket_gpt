@@ -108,16 +108,50 @@ class PocketAuth:
         }
 
         try:
+            logger.info("Checking authentication status with Pocket API...")
             response = requests.post(test_url, headers=headers, json=payload)
+
+            # Log raw response details for debugging
+            logger.debug(f"Response Status Code: {response.status_code}")
+            logger.debug(f"Response Content: {response.text}")
+
             if response.status_code == 200:
                 logger.info("Pocket authentication verified successfully.")
                 return {"status": "success", "message": "Authentication is valid."}
-            elif response.status_code == 401:
+
+            # Handle specific error codes
+            if response.status_code == 401:
                 logger.error("Invalid or expired Pocket access token.")
-                return {"status": "error", "message": "Invalid or expired access token."}
-            else:
-                logger.error(f"Unexpected API response: {response.text}")
-                return {"status": "error", "message": f"API error: {response.text}"}
+                return {
+                    "status": "error",
+                    "message": "Invalid or expired access token. " "Please re-authenticate to generate a new token.",
+                }
+
+            if response.status_code == 403:
+                logger.error("Access denied due to insufficient permissions.")
+                return {
+                    "status": "error",
+                    "message": "Access denied. Ensure your consumer key has the correct permissions.",
+                }
+
+            if response.status_code == 400:
+                logger.error("Bad request sent to the API.")
+                return {
+                    "status": "error",
+                    "message": "Bad request. Check the API payload or parameters.",
+                }
+
+            # Log unexpected API responses
+            logger.error(f"Unexpected API response: {response.text}")
+            return {"status": "error", "message": f"API error: {response.text}"}
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error while verifying authentication: {e}")
+            return {
+                "status": "error",
+                "message": f"Network error: {str(e)}. Check your internet connection.",
+            }
+
         except Exception as e:
-            logger.error(f"Error while verifying authentication: {e}")
+            logger.error(f"Unexpected error while verifying authentication: {e}")
             return {"status": "error", "message": f"Unexpected error: {str(e)}"}
