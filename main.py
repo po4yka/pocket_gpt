@@ -18,7 +18,8 @@ from pocket_api.auth import PocketAuth
 from pocket_api.pocket_client import PocketClient
 
 
-def main():
+def setup_parser():
+    """Set up command-line argument parser."""
     parser = argparse.ArgumentParser(
         description="Pocket GPT CLI Tool",
         epilog="For more details, refer to the README or contact support.",
@@ -60,7 +61,87 @@ def main():
     )
 
     parser.add_argument("--get-article-by-url", type=str, help="Get article information by its original URL")
+    parser.add_argument("--authenticate", action="store_true", help="Authenticate with the Pocket API")
 
+    return parser
+
+
+def authenticate_user(pocket_auth):
+    """Authenticate user and update environment file."""
+    try:
+        new_access_token = pocket_auth.authenticate()
+        if new_access_token:
+            from dotenv import find_dotenv, set_key
+
+            dotenv_path = find_dotenv()
+            if dotenv_path:
+                set_key(dotenv_path, "POCKET_ACCESS_TOKEN", new_access_token)
+                logger.info("Access token updated in .env file.")
+            else:
+                logger.error(".env file not found.")
+        else:
+            logger.error("Authentication failed.")
+    except Exception as e:
+        logger.error(f"Authentication process failed: {e}")
+
+
+def execute_actions(args, session, pocket_client, pocket_auth, content_fetcher, openai_processor):
+    """Execute actions based on the parsed arguments."""
+    if args.authenticate:
+        authenticate_user(pocket_auth)
+
+    if args.fetch_content:
+        fetch_content_for_articles(session, content_fetcher)
+
+    if args.process_articles:
+        process_articles_with_gpt(session, openai_processor)
+
+    if args.update_tags:
+        update_pocket_tags(session, pocket_client)
+
+    if args.list_incomplete:
+        incomplete_articles = list_incomplete_articles(session)
+        for article in incomplete_articles:
+            logger.info(f"Incomplete Article: {article}")
+
+    if args.list_articles:
+        articles = list_all_articles(session)
+        for article in articles:
+            logger.info(f"Article: {article}")
+
+    if args.db_info:
+        db_info = get_database_info(session)
+        logger.info(f"Database Info: {db_info}")
+
+    if args.check_auth_status:
+        auth_status = pocket_auth.check_authentication_status()
+        logger.info(f"Authentication Status: {auth_status}")
+
+    if args.list_missing:
+        missing_articles = pocket_client.get_articles_not_in_db()
+        for pocket_id in missing_articles:
+            logger.info(f"Missing Article ID: {pocket_id}")
+
+    if args.load_missing:
+        pocket_client.load_missing_articles(batch_size=5)
+
+    if args.get_article_by_url:
+        article_data = pocket_client.get_article_by_url(args.get_article_by_url)
+        if article_data:
+            logger.info("Article Data:\n" + json.dumps(article_data, indent=4, ensure_ascii=False))
+        else:
+            logger.info("No article found for the provided URL.")
+
+    if args.delete_all:
+        auth_status = pocket_auth.check_authentication_status()
+        if auth_status["status"] == "success":
+            pocket_client.delete_all_articles()
+        else:
+            logger.error("Authentication failed. Cannot proceed with deleting articles.")
+
+
+def main():
+    parser = setup_parser()
     args = parser.parse_args()
 
     session = get_session()
@@ -70,42 +151,7 @@ def main():
     openai_processor = OpenAIProcessor()
 
     try:
-        if args.fetch_content:
-            fetch_content_for_articles(session, content_fetcher)
-        if args.process_articles:
-            process_articles_with_gpt(session, openai_processor)
-        if args.update_tags:
-            update_pocket_tags(session, pocket_client)
-        if args.list_incomplete:
-            incomplete_articles = list_incomplete_articles(session)
-            for article in incomplete_articles:
-                logger.info(f"Incomplete Article: {article}")
-        if args.list_articles:
-            articles = list_all_articles(session)
-            for article in articles:
-                logger.info(f"Article: {article}")
-        if args.db_info:
-            db_info = get_database_info(session)
-            logger.info(f"Database Info: {db_info}")
-        if args.check_auth_status:
-            auth_status = pocket_auth.check_authentication_status()
-            logger.info(f"Authentication Status: {auth_status}")
-        if args.list_missing:
-            missing_articles = pocket_client.get_articles_not_in_db()
-            for pocket_id in missing_articles:
-                logger.info(f"Missing Article ID: {pocket_id}")
-        if args.load_missing:
-            pocket_client.load_missing_articles(batch_size=5)
-        if args.get_article_by_url:
-            article_data = pocket_client.get_article_by_url(args.get_article_by_url)
-            if article_data:
-                logger.info("Article Data:\n" + json.dumps(article_data, indent=4, ensure_ascii=False))
-            else:
-                logger.info("No article found for the provided URL.")
-        if args.delete_all:
-            auth_status = pocket_auth.check_authentication_status()
-            logger.info(f"Authentication Status: {auth_status}")
-            pocket_client.delete_all_articles()
+        execute_actions(args, session, pocket_client, pocket_auth, content_fetcher, openai_processor)
     finally:
         session.close()
 
