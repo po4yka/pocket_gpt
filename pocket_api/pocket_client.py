@@ -23,20 +23,40 @@ class PocketClient:
 
     def _check_rate_limit(self, headers: CaseInsensitiveDict[str]) -> None:
         """Check and respect rate limits based on response headers."""
-        user_remaining = int(headers.get("X-Limit-User-Remaining", "1"))
-        user_reset = int(headers.get("X-Limit-User-Reset", "0"))
-        key_remaining = int(headers.get("X-Limit-Key-Remaining", "1"))
-        key_reset = int(headers.get("X-Limit-Key-Reset", "0"))
+        # Log missing headers
+        missing_headers = []
+        for header in ["X-Limit-User-Remaining", "X-Limit-User-Reset", "X-Limit-Key-Remaining", "X-Limit-Key-Reset"]:
+            if header not in headers:
+                missing_headers.append(header)
+        if missing_headers:
+            logger.warning(f"Missing rate limit headers: {', '.join(missing_headers)}")
 
-        logger.debug(f"Rate Limit Status - User Remaining: {user_remaining}, Key Remaining: {key_remaining}")
+        # Extract and parse headers
+        try:
+            user_remaining = int(headers.get("X-Limit-User-Remaining", 1))
+            user_reset = int(headers.get("X-Limit-User-Reset", 0))
+            key_remaining = int(headers.get("X-Limit-Key-Remaining", 1))
+            key_reset = int(headers.get("X-Limit-Key-Reset", 0))
+        except ValueError as e:
+            logger.error(f"Error parsing rate limit headers: {e}")
+            return
 
-        if user_remaining == 0:
-            logger.warning(f"User limit reached. Waiting {user_reset} seconds.")
-            sleep(user_reset)
+        logger.debug(
+            f"Rate Limit Status - User Remaining: {user_remaining}, "
+            f"User Reset: {user_reset}, Key Remaining: {key_remaining}, Key Reset: {key_reset}"
+        )
 
-        if key_remaining == 0:
-            logger.warning(f"Consumer key limit reached. Waiting {key_reset} seconds.")
-            sleep(key_reset)
+        # Handle user rate limit
+        if user_remaining <= 0:
+            wait_time = user_reset + 1  # Add a buffer
+            logger.warning(f"User limit reached or exceeded. Waiting {wait_time} seconds.")
+            sleep(wait_time)
+
+        # Handle consumer key rate limit
+        if key_remaining <= 0:
+            wait_time = key_reset + 1  # Add a buffer
+            logger.warning(f"Consumer key limit reached or exceeded. Waiting {wait_time} seconds.")
+            sleep(wait_time)
 
     def _fetch_page(self, count: int, offset: int) -> Optional[Dict[str, Any]]:
         """Fetch a single page of articles with pagination."""
@@ -491,25 +511,19 @@ class PocketClient:
 
             if response_data.get("status") != 1:
                 logger.error(f"Pocket API reported failure: {response_data}")
-                time.sleep(2**attempt)  # Exponential backoff
+                time.sleep(2**attempt)
                 continue
 
             # Process action results
             action_results = response_data.get("action_results", [])
-            action_errors = response_data.get("action_errors", [])
             new_actions_to_retry = []
-            for idx, (result, error) in enumerate(zip(action_results, action_errors)):
+            for idx, result in enumerate(action_results):
                 original_idx = batch_actions.index(actions_to_retry[idx])
                 if result:
                     successful_deletions[original_idx] = True
                 else:
-                    logger.error(f"Action {original_idx} failed with error: {error}")
-                    if error and error.get("code") in [401, 403]:
-                        logger.error("Authentication error on action. Will not retry.")
-                        successful_deletions[original_idx] = False
-                    else:
-                        # Prepare to retry this action
-                        new_actions_to_retry.append(actions_to_retry[idx])
+                    logger.error(f"Action {original_idx} failed.")
+                    new_actions_to_retry.append(actions_to_retry[idx])
 
             actions_to_retry = new_actions_to_retry
             if actions_to_retry:
